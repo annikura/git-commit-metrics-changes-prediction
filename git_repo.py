@@ -56,11 +56,11 @@ class Commit:
         else:
             return commit.tree
 
-    def list_objects(self):
+    def list_objects(self, want_unchanged=True):
         result = []
         for tree_change in tree_changes(self._repo.object_store,
                                         self.get_tree(self._prev_commit), self.get_tree(self._commit),
-                                        want_unchanged=True):
+                                        want_unchanged=want_unchanged):
             result.append(Object(self._repo, self, tree_change.new, tree_change.old))
         return result
 

@@ -1,4 +1,4 @@
-import matplotlib.pyplot as plt
+from java_metrics import JavaFile
 
 
 class Collector:
@@ -15,8 +15,36 @@ class Collector:
         pass
 
 
+class JavaMethodsDataCollector(Collector):
+    def __init__(self, collectors):
+        self.ID = "method_data"
+        self.collectors = collectors
+
+    def collect(self, commit):
+        for file in commit.list_objects():
+            content = file.get_content()
+            file_analyzer = JavaFile(content)
+            methods = file_analyzer.eval_blocks()
+
+            for method in methods:
+                method_block = methods[method]
+                new_name = file.path + "::" + method
+                for collector in self.collectors:
+                    collector.collect(new_name, method_block)
+
+    def process(self):
+        results = []
+        for collector in self.collectors:
+            results.append(collector.process())
+
+    def get_data(self):
+        return self.collectors
+
+
 class CommitSizeCollector(Collector):
+
     def __init__(self):
+        self.ID = "commit_size"
         self.commit_sizes = []
 
     def collect(self, commit):
@@ -31,15 +59,13 @@ class CommitSizeCollector(Collector):
         self.commit_sizes = []
 
     def process(self):
-        plt.plot(list(range(1, len(self.commit_sizes) + 1)), self.commit_sizes)
-        plt.show()
-
-    def get_data(self):
         return self.commit_sizes
 
 
 class AuthorsDataCollector(Collector):
     def __init__(self, collectors_generator):
+        sample = collectors_generator()
+        self.ID = "authors_data:" + sample.ID
         self.authors_collectors = {}
         self._collectors_generator = collectors_generator
 
@@ -58,4 +84,3 @@ class AuthorsDataCollector(Collector):
 
     def get_data(self):
         return self.authors_collectors
-

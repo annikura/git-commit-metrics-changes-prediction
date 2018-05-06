@@ -1,3 +1,5 @@
+from enum import Enum, auto
+
 from java_metrics import JavaFile
 
 
@@ -15,10 +17,37 @@ class Collector:
         pass
 
 
+class CommitTracker:
+    def __init__(self):
+        self.__current_commit = None
+
+    def check_for_change(self, commit):
+        if self.__current_commit is None or self.__current_commit.sha == commit.sha:
+            self.__current_commit = commit
+            self.flush()
+
+    def flush(self):
+        pass
+
+
+class MethodCollector(Collector):
+    def collect(self, commit, method_name, method_body):
+        pass
+
+    def clear(self):
+        pass
+
+    def process(self):
+        pass
+
+    def get_data(self):
+        pass
+
+
 class JavaMethodsDataCollector(Collector):
-    def __init__(self, collectors):
+    def __init__(self, method_collectors):
         self.ID = "method_data"
-        self.collectors = collectors
+        self.method_collectors = method_collectors
 
     def collect(self, commit):
         for file in commit.list_objects():
@@ -29,20 +58,102 @@ class JavaMethodsDataCollector(Collector):
             for method in methods:
                 method_block = methods[method]
                 new_name = file.path + "::" + method
-                for collector in self.collectors:
-                    collector.collect(new_name, method_block)
+                for collector in self.method_collectors:
+                    collector.collect(commit, new_name, method_block)
 
     def process(self):
         results = []
-        for collector in self.collectors:
+        for collector in self.method_collectors:
             results.append(collector.process())
 
     def get_data(self):
-        return self.collectors
+        return self.method_collectors
+
+
+class MethodSignatureCollector(MethodCollector):
+    def __init__(self):
+        self.next_free = 0
+        self.__name_map = {}
+        self.__result = {}
+
+    def collect(self, commit, method_name, method_body):
+        if method_body[0] not in self.__name_map:
+            self.__name_map = self.next_free
+            self.next_free += 1
+        self.__result[method_name] = self.__name_map[method_body[0]]
+
+    def process(self):
+        return self.get_data()
+
+    def get_data(self):
+        return self.__result
+
+
+class MethodLengthCollector(MethodCollector):
+    def __init__(self):
+        self.__lengths = {}
+
+    def collect(self, commit, method_name, method_body):
+        if method_name not in self.__lengths:
+            self.__lengths[method_name] = []
+        self.__lengths[method_name].append(len(method_body))
+
+    def process(self):
+        return self.get_data()
+
+    def get_data(self):
+        return self.__lengths
+
+
+class MethodCurrentChangeCollector(MethodCollector, CommitTracker):
+    class MethodStatus(Enum):
+        NO_CHANGE = auto()
+        MODIFIED = auto()
+        ADDED = auto()
+        DELETED = auto()
+
+    def __init__(self):
+        super().__init__()
+        self.__previous_implementations = {}
+        self.__current_changes = set([])
+        self.__change_status = {}
+
+    def collect(self, commit, method_name, method_body):
+        # filters out all deleted methods if there were any in the previous commit
+        self.check_for_change(commit)
+        if method_name not in self.__previous_implementations:
+            self.__previous_implementations[method_name] = method_body
+            self.__current_changes.add(method_name)
+            self.__change_status[method_name] = self.MethodStatus.ADDED
+            return
+        # Then method name is in __previous_implementations (not deleted)
+        if len(self.__previous_implementations) != len(method_body):
+            self.__change_status[method_name] = self.MethodStatus.MODIFIED
+            return
+        # Method implementations have equal lengths. Now we they should be compared line by line
+        for old, new in zip(self.__previous_implementations[method_name], method_body):
+            if old != new:
+                self.__change_status[method_name] = self.MethodStatus.MODIFIED
+                return
+        #  All the lines are equal
+        self.__change_status[method_name] = self.MethodStatus.NO_CHANGE
+        return
+
+    def flush(self):
+        to_be_removed = []
+        for method in self.__previous_implementations:
+            if method not in self.__current_changes:
+                self.__change_status[method] = self.MethodStatus.DELETED
+                to_be_removed.append(method)
+        for item in to_be_removed:
+            del self.__previous_implementations[item]
+        self.__current_changes = {}
+
+    def get_data(self):
+        return self.__change_status
 
 
 class CommitSizeCollector(Collector):
-
     def __init__(self):
         self.ID = "commit_size"
         self.commit_sizes = []

@@ -153,6 +153,25 @@ class MethodCurrentChangeCollector(MethodCollector, CommitTracker):
         return self.__change_status
 
 
+class MethodLatestChangesCollector(MethodCollector, CommitTracker):
+    def __init__(self, stored_changes_max, method_current_change_collector):
+        super().__init__()
+        self.method_current_change_collector = method_current_change_collector
+        self.__stored_changes_max = stored_changes_max
+        self.__latest_changes = []
+
+    def collect(self, commit, method_name, method_body):
+        self.method_current_change_collector.collect(commit, method_name, method_body)
+
+    def flush(self):
+        self.__latest_changes.append(self.method_current_change_collector.get_data)
+        while len(self.__latest_changes) > self.__stored_changes_max:
+            self.__latest_changes.pop(0)
+
+    def get_data(self):
+        return self.__latest_changes
+
+
 class CommitSizeCollector(Collector):
     def __init__(self):
         self.ID = "commit_size"

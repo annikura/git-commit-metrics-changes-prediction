@@ -1,3 +1,4 @@
+import difflib
 from enum import Enum, auto
 
 from java_metrics import JavaFile
@@ -174,6 +175,7 @@ class MethodLatestChangesCollector(MethodCollector):
         self.method_current_change_collector.collect(commit, method_name, method_body, old_method_body)
 
     def __flush__(self):
+        self.method_current_change_collector.flush()
         self.__latest_changes.append(self.method_current_change_collector.get_data)
         while len(self.__latest_changes) > self.__stored_changes_max:
             self.__latest_changes.pop(0)
@@ -182,7 +184,7 @@ class MethodLatestChangesCollector(MethodCollector):
         return self.__latest_changes
 
 
-class MethodCurrentTimeOfLastChange(MethodCollector):
+class MethodCurrentTimeOfLastChangeCollector(MethodCollector):
     def __init__(self):
         super().__init__()
         self.__change_timestamps = {}
@@ -195,10 +197,10 @@ class MethodCurrentTimeOfLastChange(MethodCollector):
         return self.__change_timestamps
 
 
-class MethodLatestTimeOfLastChanges(MethodCollector):
+class MethodLatestTimeOfLastChangesCollector(MethodCollector):
     def __init__(self, stored_changes_max):
         super().__init__()
-        self.__method_current_time_of_last_change = MethodCurrentTimeOfLastChange()
+        self.__method_current_time_of_last_change = MethodCurrentTimeOfLastChangeCollector()
         self.__change_timestamps = []
         self.__stored_changes_max = stored_changes_max
 
@@ -206,12 +208,57 @@ class MethodLatestTimeOfLastChanges(MethodCollector):
         self.__method_current_time_of_last_change.collect(commit, method_name, method_body, old_method_body)
 
     def __flush__(self):
+        self.__method_current_time_of_last_change.flush()
         self.__change_timestamps.append(self.__method_current_time_of_last_change.get_data())
         while len(self.__change_timestamps) > self.__stored_changes_max:
             self.__change_timestamps.pop(0)
 
     def get_data(self):
         return self.__change_timestamps
+
+
+class MethodCommitsSinceLastChangeCollector(MethodCollector):
+    def __init__(self):
+        super().__init__()
+        self.__commits_since_last_change = {}
+
+    def collect(self, commit, method_name, new_method_body, old_method_body):
+        if self.__first_commit or self.code_changed(old_method_body, new_method_body):
+            self.__commits_since_last_change[method_name] = -1
+
+    def __flush__(self):
+        for method in self.__commits_since_last_change:
+            self.__commits_since_last_change[method] += 1
+
+    def get_data(self):
+        return self.__commits_since_last_change
+
+
+class MethodFadingLinesChangeRatioCollector(MethodCollector):
+    def __init__(self):
+        super().__init__()
+        self.__fading_ratios = {}
+        self.__new_ratios = {}
+
+    def collect(self, commit, method_name, new_method_body, old_method_body):
+        if method_name not in self.__fading_ratios:
+            self.__fading_ratios[method_name] = 1
+            return
+        self.__new_ratios[method_name] = difflib.SequenceMatcher(
+            isjunk=lambda x: x in " \t",
+            a="\n".join(new_method_body),
+            b="\n".join(old_method_body)).ratio()
+
+    def __flush__(self):
+        for method, old_ratio in self.__fading_ratios.items():
+            new_ratio = self.__new_ratios[method]
+            if new_ratio is None:
+                new_ratio = 1.0
+            self.__fading_ratios[method] = (new_ratio + old_ratio) / 2
+        self.__new_ratios = {}
+
+    def get_data(self):
+        return self.__fading_ratios
 
 
 class CommitSizeCollector(Collector):

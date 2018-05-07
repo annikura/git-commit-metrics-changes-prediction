@@ -20,10 +20,15 @@ class Collector:
 class CommitTracker:
     def __init__(self):
         self.__current_commit = None
+        self.__first_commit = True
 
     def check_for_change(self, commit):
-        if self.__current_commit is None or self.__current_commit.sha == commit.sha:
+        if self.__current_commit is None:
             self.__current_commit = commit
+
+        if self.__current_commit is not None and self.__current_commit.sha != commit.sha:
+            self.__current_commit = commit
+            self.__first_commit = False
             self.flush()
 
     def flush(self):
@@ -31,7 +36,7 @@ class CommitTracker:
 
 
 class MethodCollector(Collector):
-    def collect(self, commit, method_name, method_body):
+    def collect(self, commit, method_name, new_method_body, old_method_body):
         pass
 
     def clear(self):
@@ -43,13 +48,29 @@ class MethodCollector(Collector):
     def get_data(self):
         pass
 
+    @staticmethod
+    def code_changed(code1, code2):
+        if code1 is None and code2 is None:
+            return True
+        if code1 is None or code2 is None:
+            return False
+        if len(code1) != len(code2):
+            return True
+        for old, new in zip(code1, code2):
+            if old != new:
+                return True
+        return False
+
 
 class JavaMethodsDataCollector(Collector):
     def __init__(self, method_collectors):
         self.ID = "method_data"
         self.method_collectors = method_collectors
+        self.__previous_implementations = {}
 
     def collect(self, commit):
+        current_implementations = {}
+
         for file in commit.list_objects():
             content = file.get_content()
             file_analyzer = JavaFile(content)
@@ -59,7 +80,9 @@ class JavaMethodsDataCollector(Collector):
                 method_block = methods[method]
                 new_name = file.path + "::" + method
                 for collector in self.method_collectors:
-                    collector.collect(commit, new_name, method_block)
+                    collector.collect(commit, new_name, method_block, self.__previous_implementations[new_name])
+                current_implementations[new_name] = method_block
+        self.__previous_implementations = current_implementations
 
     def process(self):
         results = []
@@ -76,7 +99,7 @@ class MethodSignatureCollector(MethodCollector):
         self.__name_map = {}
         self.__result = {}
 
-    def collect(self, commit, method_name, method_body):
+    def collect(self, commit, method_name, method_body, old_method_body):
         if method_body[0] not in self.__name_map:
             self.__name_map = self.next_free
             self.next_free += 1
@@ -93,7 +116,7 @@ class MethodLengthCollector(MethodCollector):
     def __init__(self):
         self.__lengths = {}
 
-    def collect(self, commit, method_name, method_body):
+    def collect(self, commit, method_name, method_body, old_method_body):
         if method_name not in self.__lengths:
             self.__lengths[method_name] = []
         self.__lengths[method_name].append(len(method_body))
@@ -114,39 +137,32 @@ class MethodCurrentChangeCollector(MethodCollector, CommitTracker):
 
     def __init__(self):
         super().__init__()
-        self.__previous_implementations = {}
         self.__current_changes = set([])
         self.__change_status = {}
 
-    def collect(self, commit, method_name, method_body):
-        # filters out all deleted methods if there were any in the previous commit
+    def collect(self, commit, method_name, method_body, old_method_body):
+        # Filters out all deleted methods if there were any in the previous commit
         self.check_for_change(commit)
-        if method_name not in self.__previous_implementations:
-            self.__previous_implementations[method_name] = method_body
+        # Checking for data initialization commit
+        if self.__first_commit:
+            self.__current_changes.add(method_name)
+            return
+        if old_method_body is None:
             self.__current_changes.add(method_name)
             self.__change_status[method_name] = self.MethodStatus.ADDED
             return
-        # Then method name is in __previous_implementations (not deleted)
-        if len(self.__previous_implementations) != len(method_body):
+        # Then method also existed in the previous commit (not new and not deleted)
+        if self.code_changed(method_body, old_method_body):
             self.__change_status[method_name] = self.MethodStatus.MODIFIED
-            return
-        # Method implementations have equal lengths. Now we they should be compared line by line
-        for old, new in zip(self.__previous_implementations[method_name], method_body):
-            if old != new:
-                self.__change_status[method_name] = self.MethodStatus.MODIFIED
-                return
-        #  All the lines are equal
-        self.__change_status[method_name] = self.MethodStatus.NO_CHANGE
+        else:
+            self.__change_status[method_name] = self.MethodStatus.NO_CHANGE
         return
 
     def flush(self):
-        to_be_removed = []
-        for method in self.__previous_implementations:
+        for method in self.__change_status:
             if method not in self.__current_changes:
                 self.__change_status[method] = self.MethodStatus.DELETED
-                to_be_removed.append(method)
-        for item in to_be_removed:
-            del self.__previous_implementations[item]
+
         self.__current_changes = {}
 
     def get_data(self):
@@ -154,14 +170,15 @@ class MethodCurrentChangeCollector(MethodCollector, CommitTracker):
 
 
 class MethodLatestChangesCollector(MethodCollector, CommitTracker):
-    def __init__(self, stored_changes_max, method_current_change_collector):
+    def __init__(self, stored_changes_max):
         super().__init__()
-        self.method_current_change_collector = method_current_change_collector
+        self.method_current_change_collector = MethodCurrentChangeCollector()
         self.__stored_changes_max = stored_changes_max
         self.__latest_changes = []
 
-    def collect(self, commit, method_name, method_body):
-        self.method_current_change_collector.collect(commit, method_name, method_body)
+    def collect(self, commit, method_name, method_body, old_method_body):
+        self.check_for_change(commit)
+        self.method_current_change_collector.collect(commit, method_name, method_body, old_method_body)
 
     def flush(self):
         self.__latest_changes.append(self.method_current_change_collector.get_data)
@@ -170,6 +187,38 @@ class MethodLatestChangesCollector(MethodCollector, CommitTracker):
 
     def get_data(self):
         return self.__latest_changes
+
+
+class MethodCurrentTimeOfLastChange(MethodCollector):
+    def __init__(self):
+        self.__change_timestamps = {}
+
+    def collect(self, commit, method_name, method_body, old_method_body):
+        if self.code_changed(method_body, old_method_body):
+            self.__change_timestamps[method_name] = commit.committer_time
+
+    def get_data(self):
+        return self.__change_timestamps
+
+
+class MethodLatestTimeOfLastChanges(MethodCollector, CommitTracker):
+    def __init__(self, stored_changes_max):
+        super().__init__()
+        self.__method_current_time_of_last_change = MethodCurrentTimeOfLastChange()
+        self.__change_timestamps = []
+        self.__stored_changes_max = stored_changes_max
+
+    def collect(self, commit, method_name, method_body, old_method_body):
+        self.check_for_change(commit)
+        self.__method_current_time_of_last_change.collect(commit, method_name, method_body, old_method_body)
+
+    def flush(self):
+        self.__change_timestamps.append(self.__method_current_time_of_last_change.get_data())
+        while len(self.__change_timestamps) > self.__stored_changes_max:
+            self.__change_timestamps.pop(0)
+
+    def get_data(self):
+        return self.__change_timestamps
 
 
 class CommitSizeCollector(Collector):

@@ -59,6 +59,8 @@ class JavaMethodsDataCollector(Collector):
     def __init__(self, method_collectors):
         self.ID = "method_data"
         self.method_collectors = method_collectors
+        self.__method_ids = {}
+        self.__id_counter = 0
         self.__previous_implementations = {}
 
     def collect(self, commit):
@@ -71,10 +73,17 @@ class JavaMethodsDataCollector(Collector):
 
             for method in methods:
                 method_block = methods[method]
-                new_name = file.path + "::" + method
+                full_method_signature = file.path + "::" + method
+                if full_method_signature in self.__method_ids:
+                    method_id = self.__method_ids[full_method_signature]
+                else:
+                    method_id = self.__id_counter
+                    self.__method_ids[full_method_signature] = method_id
+                    self.__id_counter += 1
+
                 for collector in self.method_collectors:
-                    collector.collect(commit, new_name, method_block, self.__previous_implementations[new_name])
-                current_implementations[new_name] = method_block
+                    collector.collect(commit, method_id, method_block, self.__previous_implementations[method_id])
+                current_implementations[method_id] = method_block
         for collector in self.method_collectors:
             collector.flush()
         self.__previous_implementations = current_implementations

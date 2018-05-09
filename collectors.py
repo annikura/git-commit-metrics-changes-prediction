@@ -89,9 +89,7 @@ class JavaMethodsDataCollector(Collector):
         self.__previous_implementations = current_implementations
 
     def process(self):
-        results = []
-        for collector in self.method_collectors:
-            results.append(collector.process())
+        return self.get_data()
 
     def get_data(self):
         result = {}
@@ -100,7 +98,10 @@ class JavaMethodsDataCollector(Collector):
         for collector in self.method_collectors:
             collector_data = collector.get_data()
             for method_id in range(0, self.__id_counter):
-                result[method_id].append(collector_data[method_id])
+                if type(collector_data[method_id]) == list:
+                    result[method_id] += collector_data[method_id]
+                else:
+                    result[method_id].append(collector_data[method_id])
         return result
 
 
@@ -130,9 +131,7 @@ class MethodLengthCollector(MethodCollector):
         self.__lengths = {}
 
     def collect(self, commit, method_id, method_body, old_method_body):
-        if method_id not in self.__lengths:
-            self.__lengths[method_id] = []
-        self.__lengths[method_id].append(len(method_body))
+        self.__lengths[method_id] = len(method_body)
 
     def process(self):
         return self.get_data()
@@ -143,10 +142,11 @@ class MethodLengthCollector(MethodCollector):
 
 class MethodCurrentChangeCollector(MethodCollector):
     class MethodStatus(Enum):
-        NO_CHANGE = auto()
-        MODIFIED = auto()
-        ADDED = auto()
-        DELETED = auto()
+        NOT_EXIST = -1
+        ADDED = 1
+        NO_CHANGE = 0
+        MODIFIED = 2
+        DELETED = 3
 
     def __init__(self):
         super().__init__()
@@ -197,7 +197,16 @@ class MethodLatestChangesCollector(MethodCollector):
             self.__latest_changes.pop(0)
 
     def get_data(self):
-        return self.__latest_changes
+        result = {}
+        for data_list in self.__latest_changes:
+            for element in data_list:
+                if result[element] is None:
+                    result[element] = []
+                result[element].append(data_list[element])
+        for method in result:
+            num_to_be_added = self.__stored_changes_max - len(result[method])
+            result[method] = [-1] * num_to_be_added + result[method]
+        return result
 
 
 class MethodCurrentTimeOfLastChangeCollector(MethodCollector):
@@ -230,7 +239,16 @@ class MethodLatestTimeOfLastChangesCollector(MethodCollector):
             self.__change_timestamps.pop(0)
 
     def get_data(self):
-        return self.__change_timestamps
+        result = {}
+        for data_list in self.__change_timestamps:
+            for element in data_list:
+                if result[element] is None:
+                    result[element] = []
+                result[element].append(data_list[element])
+        for method in result:
+            num_to_be_added = self.__stored_changes_max - len(result[method])
+            result[method] = [-1] * num_to_be_added + result[method]
+        return result
 
 
 class MethodCommitsSinceLastChangeCollector(MethodCollector):

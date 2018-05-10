@@ -1,4 +1,6 @@
 import difflib
+import matplotlib.pyplot as plt
+
 from enum import Enum
 
 from java_metrics import JavaFile
@@ -26,6 +28,7 @@ class MethodCollector(Collector):
     """Interface for collecting data about methods."""
     def __init__(self):
         self.__first_commit = True
+        self.ID = ""
 
     def collect(self, commit, method_id, new_method_body, old_method_body):
         """
@@ -60,7 +63,39 @@ class MethodCollector(Collector):
 
         :return: get_data result
         """
-        pass
+
+        result: dict = self.get_data()
+
+        max_x = 0
+        max_y = 0
+        min_x = 0
+        min_y = 0
+
+        xs = []
+        ys = []
+
+        can_be_represented = True
+        number_types = [int, float, complex]
+
+        for key, value in result.items():
+            if key not in number_types or value not in number_types:
+                can_be_represented = False
+                break
+            max_x = max(max_x, key)
+            min_x = min(min_x, key)
+            max_y = max(max_y, value)
+            min_y = min(min_y, value)
+            xs.append(key)
+            ys.append(value)
+
+        if can_be_represented:
+            plt.plot(xs, ys, 'ro')
+            plt.axis([min_x, max_x, min_y, max_y])
+            plt.title(self.ID)
+            plt.grid(True)
+            plt.show()
+
+        return result
 
     def get_data(self):
         """
@@ -145,6 +180,7 @@ class JavaMethodsDataCollector(Collector):
 class MethodSignatureCollector(MethodCollector):
     def __init__(self):
         super().__init__()
+        self.ID = "method_signature"
         self.next_free = 0
         self.__name_map = {}
         self.__result = {}
@@ -165,6 +201,7 @@ class MethodSignatureCollector(MethodCollector):
 class MethodLengthCollector(MethodCollector):
     def __init__(self):
         super().__init__()
+        self.ID = "method_length"
         self.__lengths = {}
 
     def collect(self, commit, method_id, method_body, old_method_body):
@@ -187,6 +224,7 @@ class MethodCurrentChangeCollector(MethodCollector):
 
     def __init__(self):
         super().__init__()
+        self.ID = "method_change_type"
         self.__current_changes = set([])
         self.__change_status = {}
 
@@ -220,6 +258,7 @@ class MethodCurrentChangeCollector(MethodCollector):
 class MethodLatestChangesCollector(MethodCollector):
     def __init__(self, stored_changes_max):
         super().__init__()
+        self.ID = "method_latest_changes_types"
         self.method_current_change_collector = MethodCurrentChangeCollector()
         self.__stored_changes_max = stored_changes_max
         self.__latest_changes = []
@@ -249,6 +288,7 @@ class MethodLatestChangesCollector(MethodCollector):
 class MethodCurrentTimeOfLastChangeCollector(MethodCollector):
     def __init__(self):
         super().__init__()
+        self.ID = "method_change_time"
         self.__change_timestamps = {}
 
     def collect(self, commit, method_id, method_body, old_method_body):
@@ -262,6 +302,7 @@ class MethodCurrentTimeOfLastChangeCollector(MethodCollector):
 class MethodLatestTimeOfLastChangesCollector(MethodCollector):
     def __init__(self, stored_changes_max):
         super().__init__()
+        self.ID = "method_latest_change_times"
         self.__method_current_time_of_last_change = MethodCurrentTimeOfLastChangeCollector()
         self.__change_timestamps = []
         self.__stored_changes_max = stored_changes_max
@@ -291,6 +332,7 @@ class MethodLatestTimeOfLastChangesCollector(MethodCollector):
 class MethodCommitsSinceLastChangeCollector(MethodCollector):
     def __init__(self):
         super().__init__()
+        self.ID = "method_time_since_last_change"
         self.__commits_since_last_change = {}
 
     def collect(self, commit, method_id, new_method_body, old_method_body):
@@ -308,6 +350,7 @@ class MethodCommitsSinceLastChangeCollector(MethodCollector):
 class MethodFadingLinesChangeRatioCollector(MethodCollector):
     def __init__(self):
         super().__init__()
+        self.ID = "method_fading_lines_change_ratio"
         self.__fading_ratios = {}
         self.__new_ratios = {}
 

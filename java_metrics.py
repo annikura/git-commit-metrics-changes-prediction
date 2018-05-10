@@ -39,7 +39,7 @@ class MethodsCountingListener(JavaParserListener):
             method_declaration = self.tokens.getText(interval=(ctx.start.tokenIndex, ctx.stop.tokenIndex))
             method_signature = self.retrieve_signature(method_declaration)
             method_id = ".".join(self.__nested_in + [method_signature])
-            self.blocks[method_id] = method_declaration.split("\n   ")
+            self.blocks[method_id] = method_declaration.split("\n")
         self.count += 1
 
     @staticmethod
@@ -99,14 +99,13 @@ class MethodsCountingListener(JavaParserListener):
                 signature += s
 
         signature.replace(' ', '')
-        print(signature)
         return signature
 
 
 class JavaFile:
     def __init__(self, lines):
-        self.lines = lines
-        code = "\n".join(lines)
+        self.lines = [line.decode() for line in lines]
+        code = "\n".join(self.lines)
         codeStream = InputStream(code)
         lexer = JavaLexer(codeStream)
         self.tokens_stream = CommonTokenStream(lexer)

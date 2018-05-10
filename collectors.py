@@ -1,4 +1,6 @@
 import difflib
+import os
+
 import matplotlib.pyplot as plt
 
 from enum import Enum
@@ -27,7 +29,7 @@ class Collector:
 class MethodCollector(Collector):
     """Interface for collecting data about methods."""
     def __init__(self):
-        self.__first_commit = True
+        self.first_commit = True
         self.ID = ""
 
     def collect(self, commit, method_id, new_method_body, old_method_body):
@@ -66,10 +68,10 @@ class MethodCollector(Collector):
 
         result: dict = self.get_data()
 
-        max_x = 0
-        max_y = 0
-        min_x = 0
-        min_y = 0
+        max_x = -1000000000
+        max_y = -1000000000
+        min_x = 1000000000
+        min_y = 1000000000
 
         xs = []
         ys = []
@@ -78,7 +80,7 @@ class MethodCollector(Collector):
         number_types = [int, float, complex]
 
         for key, value in result.items():
-            if key not in number_types or value not in number_types:
+            if type(key) not in number_types or type(value) not in number_types:
                 can_be_represented = False
                 break
             max_x = max(max_x, key)
@@ -107,7 +109,7 @@ class MethodCollector(Collector):
         pass
 
     def flush(self):
-        self.__first_commit = False
+        self.first_commit = False
         self.__flush__()
 
     def __flush__(self):
@@ -116,9 +118,9 @@ class MethodCollector(Collector):
     @staticmethod
     def code_changed(code1, code2):
         if code1 is None and code2 is None:
-            return True
-        if code1 is None or code2 is None:
             return False
+        if code1 is None or code2 is None:
+            return True
         if len(code1) != len(code2):
             return True
         for old, new in zip(code1, code2):
@@ -139,6 +141,10 @@ class JavaMethodsDataCollector(Collector):
         current_implementations = {}
 
         for file in commit.list_objects():
+            _, file_extension = os.path.splitext(file.path)
+            if file_extension != ".java":
+                continue
+
             content = file.get_content()
             file_analyzer = JavaFile(content)
             methods = file_analyzer.eval_blocks()
@@ -153,8 +159,11 @@ class JavaMethodsDataCollector(Collector):
                     self.__method_ids[full_method_signature] = method_id
                     self.__id_counter += 1
 
+                old_code = None
+                if method_id in self.__previous_implementations:
+                    old_code = self.__previous_implementations[method_id]
                 for collector in self.method_collectors:
-                    collector.collect(commit, method_id, method_block, self.__previous_implementations[method_id])
+                    collector.collect(commit, method_id, method_block, old_code)
                 current_implementations[method_id] = method_block
         for collector in self.method_collectors:
             collector.flush()
@@ -168,6 +177,9 @@ class JavaMethodsDataCollector(Collector):
         for method_id in range(0, self.__id_counter):
             result[method_id] = []
         for collector in self.method_collectors:
+            collector.process()
+        for collector in self.method_collectors:
+            print(collector.ID)
             collector_data = collector.get_data()
             for method_id in range(0, self.__id_counter):
                 if type(collector_data[method_id]) == list:
@@ -230,7 +242,7 @@ class MethodCurrentChangeCollector(MethodCollector):
 
     def collect(self, commit, method_id, method_body, old_method_body):
         # Checking for data initialization commit
-        if self.__first_commit:
+        if self.first_commit:
             self.__current_changes.add(method_id)
             return
         if old_method_body is None:
@@ -239,8 +251,10 @@ class MethodCurrentChangeCollector(MethodCollector):
             return
         # Then method also existed in the previous commit (not new and not deleted)
         if self.code_changed(method_body, old_method_body):
+            self.__current_changes.add(method_id)
             self.__change_status[method_id] = self.MethodStatus.MODIFIED
         else:
+            self.__current_changes.add(method_id)
             self.__change_status[method_id] = self.MethodStatus.NO_CHANGE
         return
 
@@ -249,7 +263,7 @@ class MethodCurrentChangeCollector(MethodCollector):
             if method not in self.__current_changes:
                 self.__change_status[method] = self.MethodStatus.DELETED
 
-        self.__current_changes = {}
+        self.__current_changes = set([])
 
     def get_data(self):
         return self.__change_status
@@ -293,7 +307,7 @@ class MethodCurrentTimeOfLastChangeCollector(MethodCollector):
 
     def collect(self, commit, method_id, method_body, old_method_body):
         if self.code_changed(method_body, old_method_body):
-            self.__change_timestamps[method_id] = commit.committer_time
+            self.__change_timestamps[method_id] = commit.committer_time // 60000
 
     def get_data(self):
         return self.__change_timestamps
@@ -336,7 +350,7 @@ class MethodCommitsSinceLastChangeCollector(MethodCollector):
         self.__commits_since_last_change = {}
 
     def collect(self, commit, method_id, new_method_body, old_method_body):
-        if self.__first_commit or self.code_changed(old_method_body, new_method_body):
+        if self.first_commit or self.code_changed(old_method_body, new_method_body):
             self.__commits_since_last_change[method_id] = -1
 
     def __flush__(self):
@@ -356,18 +370,20 @@ class MethodFadingLinesChangeRatioCollector(MethodCollector):
 
     def collect(self, commit, method_id, new_method_body, old_method_body):
         if method_id not in self.__fading_ratios:
-            self.__fading_ratios[method_id] = 1
+            self.__fading_ratios[method_id] = 1.0
             return
-        self.__new_ratios[method_id] = difflib.SequenceMatcher(
-            isjunk=lambda x: x in " \t",
-            a="\n".join(new_method_body),
-            b="\n".join(old_method_body)).ratio()
+        self.__new_ratios[method_id] = 1.0
+        if old_method_body is not None:
+            self.__new_ratios[method_id] = difflib.SequenceMatcher(
+                isjunk=lambda x: x in " \t",
+                a="\n".join(new_method_body),
+                b="\n".join(old_method_body)).ratio()
 
     def __flush__(self):
         for method, old_ratio in self.__fading_ratios.items():
-            new_ratio = self.__new_ratios[method]
-            if new_ratio is None:
-                new_ratio = 1.0
+            new_ratio = 1.0
+            if method in self.__new_ratios:
+                new_ratio = self.__new_ratios[method]
             self.__fading_ratios[method] = (new_ratio + old_ratio) / 2
         self.__new_ratios = {}
 

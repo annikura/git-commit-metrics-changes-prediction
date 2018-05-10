@@ -61,7 +61,8 @@ class Commit:
         for tree_change in tree_changes(self._repo.object_store,
                                         self.get_tree(self._prev_commit), self.get_tree(self._commit),
                                         want_unchanged=want_unchanged):
-            result.append(Object(self._repo, self, tree_change.new, tree_change.old))
+            if tree_change.new[0] is not None:
+                result.append(Object(self._repo, self, tree_change.new, tree_change.old))
         return result
 
 
@@ -70,7 +71,9 @@ class Object:
         self._repo = repo
         self._commit = commit
         self._old_version = old
-        (self.mode, self.path, self.sha) = new
+        (self.path, self.mode, self.sha) = new
+        self.path = self.path.decode()
+        self.sha = self.sha.decode()
 
     def get_content(self):
         if self.sha is None:

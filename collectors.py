@@ -1,37 +1,74 @@
 import difflib
-from enum import Enum, auto
+from enum import Enum
 
 from java_metrics import JavaFile
 
 
 class Collector:
-    def collect(self, data):
-        pass
+    """Data collector interface."""
 
-    def clear(self):
+    def collect(self, data):
+        """Retrieves data wanted from the given data structure to store or process it. Expected to return nothing."""
         pass
 
     def process(self):
+        """Returns collected data as a dictionary {id : collected_data} (which is usually the result of get_data).
+        Also produces visual representation of the collected data, if possible.
+        """
         pass
 
     def get_data(self):
+        """Returns collected data as a dictionary {id : collected_data}."""
         pass
 
 
 class MethodCollector(Collector):
+    """Interface for collecting data about methods."""
     def __init__(self):
         self.__first_commit = True
 
     def collect(self, commit, method_id, new_method_body, old_method_body):
-        pass
+        """
+        Retrieves required data about method from the given data structures to store or process it.
+        Expected to return nothing.
 
-    def clear(self):
+        Args:
+        :param commit: current commit, where new_method_body was extracted from.
+        :type commit: git_repo.Commit
+        :param method_id: method id number. This id will later be used as a key in the dictionary
+            returned by get_data method.
+        :type method_id: int
+        :param new_method_body: line by line method code represented in the current commit.
+            None if method was deleted in current commit.
+        :type new_method_body: list[string]
+        :param old_method_body: line by line method code represented in the previous commit.
+            None if method was just created.
+        :type old_method_body: list[string]
+
+        :return nothing
+        :rtype None
+        """
         pass
 
     def process(self):
+        """
+        Generates visualisation of the collected data, if possible.
+        The only purpose of this method is optimize the number of calls of get_method.
+        It returns exactly the same data as get_method but uses it to generate a graphic before returning.
+        As get_data can be working slow, it can be time-consuming to call
+        this method explicitly for generating of the visualisation.
+
+        :return: get_data result
+        """
         pass
 
     def get_data(self):
+        """
+        Processes collected data into the dictionary.
+
+        :returns collected data in a dictionary representation {id : collected_data}.
+        :rtype dict{id : data}
+        """
         pass
 
     def flush(self):
@@ -308,9 +345,6 @@ class CommitSizeCollector(Collector):
                 cnt += len(content)
         self.commit_sizes.append(cnt)
 
-    def clear(self):
-        self.commit_sizes = []
-
     def process(self):
         return self.commit_sizes
 
@@ -326,9 +360,6 @@ class AuthorsDataCollector(Collector):
         if commit.author not in self.authors_collectors:
             self.authors_collectors[commit.author] = self._collectors_generator()
         self.authors_collectors[commit.author].collect(commit)
-
-    def clear(self):
-        self.authors_collectors = {}
 
     def process(self):
         for author, collector in self.authors_collectors.items():

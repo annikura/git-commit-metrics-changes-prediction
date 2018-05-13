@@ -1,4 +1,5 @@
 from antlr4 import *
+import re
 
 from antlr_java_parser.JavaLexer import JavaLexer
 from antlr_java_parser.JavaParser import JavaParser
@@ -34,6 +35,62 @@ class MethodsCountingListener(JavaParserListener):
     def exitMethodBody(self, ctx: JavaParser.MethodBodyContext):
         self.__in_method_counter -= 1
 
+    @staticmethod
+    def retrieve_signature(first_line: str):
+        try:
+            # suposingly string of the following format will remain: name(parameters)
+            tokens = re.findall(r"[\w_\d\[\]]+|[@(),<>&]|\.+", first_line)
+            tokens = tokens[tokens.index('(') - 1: tokens.index(')') + 1]
+
+            # concatenating varargs, arrays and complex types
+            valid_tokens = []
+            prev_token = ''
+            for token in tokens:
+                if token in ['[', ']', '.'] or prev_token == '.' or token == '...':
+                    valid_tokens[-1] += token
+                else:
+                    valid_tokens.append(token)
+                prev_token = token
+            tokens = valid_tokens
+
+            # erasing 'final' key words
+            tokens = filter(lambda x: x != "final", tokens)
+
+            # erasing annotations
+            tokens_without_annotations = []
+            prev_token = ""
+            for token in tokens:
+                if prev_token != "@" and token != "@":
+                    tokens_without_annotations.append(token)
+                prev_token = token
+            tokens = tokens_without_annotations
+
+            # erasing templates
+            tokens_without_templates = []
+            balance = 0
+            for token in tokens:
+                if token == '<':
+                    balance += 1
+                if balance == 0:
+                    tokens_without_templates.append(token)
+                if token == '>':
+                    balance -= 1
+            tokens = tokens_without_templates
+
+            # leaving only name and types
+            result_tokens = []
+            prev_token = ''
+            for token in tokens:
+                if prev_token in ['', '(', ',', ')'] or token in ['', '(', ',', ')']:
+                    result_tokens.append(token)
+                prev_token = token
+
+            return "".join(result_tokens)
+        except Exception as e:
+            print("error on line:", tokens)
+            print(e.__str__())
+        return first_line.replace(" ", '')
+
     def enterMethodDeclaration(self, ctx: JavaParser.MethodDeclarationContext):
         if self.__in_method_counter == 0:
             method_declaration = self.tokens.getText(interval=(ctx.start.tokenIndex, ctx.stop.tokenIndex))
@@ -41,65 +98,6 @@ class MethodsCountingListener(JavaParserListener):
             method_id = ".".join(self.__nested_in + [method_signature])
             self.blocks[method_id] = method_declaration.split("\n")
         self.count += 1
-
-    @staticmethod
-    def retrieve_signature(first_line: str):
-        closing_bracket_position = first_line.find(')')
-
-        word = ""
-        first_word_sym_position = -1
-        splitted = True
-
-        for i, s in enumerate(first_line):
-            if s == '(':
-                break
-            if s.isalnum():
-                if splitted:
-                    word = ""
-                    first_word_sym_position = i
-                    splitted = False
-                word += s
-                continue
-            splitted = True
-
-        first_line = first_line[first_word_sym_position:closing_bracket_position + 1]
-        template_balance = 0
-        line_without_templates = ""
-
-        for s in first_line:
-            if s == '<':
-                template_balance += 1
-            if template_balance == 0:
-                line_without_templates += s
-            if s == '>':
-                template_balance -= 1
-
-        signature = ""
-        in_type_parameters_list = False
-        right_after_divider = False
-        word_started = False
-
-        for s in line_without_templates:
-            if s in ['(', ')', ',']:
-                if s == '(':
-                    in_type_parameters_list = True
-                if s == ')':
-                    in_type_parameters_list = False
-                right_after_divider = True
-                word_started = False
-                signature += s
-                continue
-            if not s.isalnum():
-                if word_started:
-                    word_started = False
-                    right_after_divider = False
-                continue
-            if not in_type_parameters_list or right_after_divider:
-                word_started = True
-                signature += s
-
-        signature.replace(' ', '')
-        return signature
 
 
 class JavaFile:

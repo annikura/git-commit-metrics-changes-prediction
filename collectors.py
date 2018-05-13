@@ -283,7 +283,7 @@ class MethodLatestChangesCollector(MethodCollector):
 
     def __flush__(self):
         self.method_current_change_collector.flush()
-        self.__latest_changes.append(self.method_current_change_collector.get_data)
+        self.__latest_changes.append(self.method_current_change_collector.get_data())
         while len(self.__latest_changes) > self.__stored_changes_max:
             self.__latest_changes.pop(0)
 
@@ -413,9 +413,9 @@ class MethodChangeRatio(MethodCollector):
 
     def get_data(self):
         result = {}
-        for key, value in self.__change_info:
+        for key, value in self.__change_info.items():
             commits_changed, commits_not_existed = value
-            result[key] = commits_changed // (self.__commits_in_total - commits_not_existed)
+            result[key] = commits_changed / (self.__commits_in_total - commits_not_existed)
         return result
 
 

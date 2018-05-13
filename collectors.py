@@ -306,10 +306,13 @@ class MethodCurrentTimeOfLastChangeCollector(MethodCollector):
         super().__init__()
         self.ID = "method_change_time"
         self.__change_timestamps = {}
+        self.__first_commit_timestamp = -1
 
     def collect(self, commit, method_id, method_body, old_method_body):
+        if self.__first_commit_timestamp == -1:
+            self.__first_commit_timestamp = commit.committer_time
         if self.code_changed(method_body, old_method_body):
-            self.__change_timestamps[method_id] = commit.committer_time // 60000
+            self.__change_timestamps[method_id] = commit.committer_time - self.__first_commit_timestamp
 
     def get_data(self):
         return self.__change_timestamps

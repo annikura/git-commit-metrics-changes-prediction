@@ -4,9 +4,7 @@ import os
 
 import matplotlib.pyplot as plt
 
-from enum import Enum
-
-from java_metrics import JavaFile
+from java_metrics import JavaFile, retrieve_signature
 
 
 class Collector:
@@ -199,11 +197,12 @@ class MethodSignatureCollector(MethodCollector):
         self.__name_map = {}
         self.__result = {}
 
-    def collect(self, commit, method_id, method_body, old_method_body):
-        if method_body[0] not in self.__name_map:
-            self.__name_map = self.next_free
+    def collect(self, commit, method_id, new_method_body, old_method_body):
+        signature = retrieve_signature("\n".join(new_method_body))
+        if signature not in self.__name_map:
+            self.__name_map[signature] = self.next_free
             self.next_free += 1
-        self.__result[method_id] = self.__name_map[method_body[0]]
+        self.__result[method_id] = self.__name_map[signature]
 
     def process(self):
         return self.get_data()

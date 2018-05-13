@@ -283,7 +283,7 @@ class MethodLatestChangesCollector(MethodCollector):
 
     def __flush__(self):
         self.method_current_change_collector.flush()
-        self.__latest_changes.append(self.method_current_change_collector.get_data())
+        self.__latest_changes.append(self.method_current_change_collector.get_data().copy())
         while len(self.__latest_changes) > self.__stored_changes_max:
             self.__latest_changes.pop(0)
 
@@ -328,7 +328,7 @@ class MethodLatestTimeOfLastChangesCollector(MethodCollector):
 
     def __flush__(self):
         self.__method_current_time_of_last_change.flush()
-        self.__change_timestamps.append(self.__method_current_time_of_last_change.get_data())
+        self.__change_timestamps.append(self.__method_current_time_of_last_change.get_data().copy())
         while len(self.__change_timestamps) > self.__stored_changes_max:
             self.__change_timestamps.pop(0)
 

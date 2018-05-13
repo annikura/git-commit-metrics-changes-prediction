@@ -1,4 +1,5 @@
 import difflib
+import enum
 import os
 
 import matplotlib.pyplot as plt
@@ -228,7 +229,7 @@ class MethodLengthCollector(MethodCollector):
 
 
 class MethodCurrentChangeCollector(MethodCollector):
-    class MethodStatus(Enum):
+    class MethodStatus(enum.IntEnum):
         NOT_EXIST = -1
         ADDED = 1
         NO_CHANGE = 0
@@ -248,21 +249,21 @@ class MethodCurrentChangeCollector(MethodCollector):
             return
         if old_method_body is None:
             self.__current_changes.add(method_id)
-            self.__change_status[method_id] = self.MethodStatus.ADDED
+            self.__change_status[method_id] = self.MethodStatus.ADDED.__int__()
             return
         # Then method also existed in the previous commit (not new and not deleted)
         if self.code_changed(method_body, old_method_body):
             self.__current_changes.add(method_id)
-            self.__change_status[method_id] = self.MethodStatus.MODIFIED
+            self.__change_status[method_id] = self.MethodStatus.MODIFIED.__int__()
         else:
             self.__current_changes.add(method_id)
-            self.__change_status[method_id] = self.MethodStatus.NO_CHANGE
+            self.__change_status[method_id] = self.MethodStatus.NO_CHANGE.__int__()
         return
 
     def __flush__(self):
         for method in self.__change_status:
             if method not in self.__current_changes:
-                self.__change_status[method] = self.MethodStatus.DELETED
+                self.__change_status[method] = self.MethodStatus.DELETED.__int__()
 
         self.__current_changes = set([])
 
@@ -298,6 +299,29 @@ class MethodLatestChangesCollector(MethodCollector):
         for method in result:
             num_to_be_added = self.__stored_changes_max - len(result[method])
             result[method] = [-1] * num_to_be_added + result[method]
+        return result
+
+
+class MethodLatestChangesSummary(MethodCollector):
+    def __init__(self, stored_changes_max):
+        super().__init__()
+        self.ID = "method_latest_changes_summary"
+        self.method_latest_changes_collector = MethodLatestChangesCollector(stored_changes_max)
+
+    def collect(self, commit, method_id, new_method_body, old_method_body):
+        self.method_latest_changes_collector.collect(commit, method_id, new_method_body, old_method_body)
+
+    def __flush__(self):
+        self.method_latest_changes_collector.__flush__()
+
+    def get_data(self):
+        result = {}
+        data = self.method_latest_changes_collector.get_data()
+        for method, latest_changes in data.items():
+            recently_added = MethodCurrentChangeCollector.MethodStatus.ADDED in latest_changes
+            recently_modified = MethodCurrentChangeCollector.MethodStatus.MODIFIED in latest_changes
+            recently_deleted = MethodCurrentChangeCollector.MethodStatus.DELETED in latest_changes
+            result[method] = [int(recently_added), int(recently_modified), int(recently_deleted)]
         return result
 
 

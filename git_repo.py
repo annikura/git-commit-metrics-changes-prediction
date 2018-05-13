@@ -22,17 +22,21 @@ class Repo:
     def branches_list(self):
         return porcelain.branch_list(self.repo_path)
 
-    def iterate_through_commits(self, branch_name, collectors):
+    def iterate_through_commits(self, branch_name, collectors, from_commit=0, to_commit=int(1e9)):
         if not self.branch_exists(branch_name):
             raise ValueError(b"Branch " + branch_name + b" does not exist")
 
         prev_commit = None
+        i = 0
         for entry in self.repo.get_walker(include=[self.repo[HEADS_PATH + branch_name].id], reverse=True):
+            if i > to_commit:
+                return
             commit = entry.commit
-
-            for collector in collectors:
-                collector.collect(Commit(commit, prev_commit, self.repo))
+            if from_commit <= i:
+                for collector in collectors:
+                    collector.collect(Commit(commit, prev_commit, self.repo))
             prev_commit = commit
+            i += 1
 
 
 class Commit:

@@ -28,6 +28,7 @@ class Collector:
 
 class MethodCollector(Collector):
     """Interface for collecting data about methods."""
+
     def __init__(self):
         self.first_commit = True
         self.ID = ""
@@ -289,8 +290,9 @@ class MethodLatestChangesCollector(MethodCollector):
     def get_data(self):
         result = {}
         for data_list in self.__latest_changes:
+            print(data_list)
             for element in data_list:
-                if result[element] is None:
+                if element not in result:
                     result[element] = []
                 result[element].append(data_list[element])
         for method in result:
@@ -372,7 +374,7 @@ class MethodFadingLinesChangeRatioCollector(MethodCollector):
         if method_id not in self.__fading_ratios:
             self.__fading_ratios[method_id] = 1.0
             return
-        self.__new_ratios[method_id] = 1.0
+        self.__new_ratios[method_id] = 0.0
         if old_method_body is not None:
             self.__new_ratios[method_id] = difflib.SequenceMatcher(
                 isjunk=lambda x: x in " \t",
@@ -389,6 +391,32 @@ class MethodFadingLinesChangeRatioCollector(MethodCollector):
 
     def get_data(self):
         return self.__fading_ratios
+
+
+class MethodChangeRatio(MethodCollector):
+    def __init__(self):
+        super().__init__()
+        self.ID = "method_change_ratio"
+        self.__change_info = {}
+        self.__commits_in_total = 0
+
+    def collect(self, commit, method_id, new_method_body, old_method_body):
+        if method_id not in self.__change_info:
+            self.__change_info[method_id] = (1, self.__commits_in_total)
+            return
+        if self.code_changed(new_method_body, old_method_body):
+            changed, existed = self.__change_info[method_id]
+            self.__change_info[method_id] = (changed + 1, existed)
+
+    def __flush__(self):
+        self.__commits_in_total += 1
+
+    def get_data(self):
+        result = {}
+        for key, value in self.__change_info:
+            commits_changed, commits_not_existed = value
+            result[key] = commits_changed // (self.__commits_in_total - commits_not_existed)
+        return result
 
 
 class CommitSizeCollector(Collector):

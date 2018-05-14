@@ -170,14 +170,23 @@ class JavaMethodsDataCollector(Collector):
         self.__previous_implementations = current_implementations
 
     def process(self):
-        return self.get_data()
+        result = {}
+        for method_id in range(0, self.__id_counter):
+            result[method_id] = []
+        for collector in self.method_collectors:
+            print(collector.ID)
+            collector_data = collector.process()
+            for method_id in range(0, self.__id_counter):
+                if type(collector_data[method_id]) == list:
+                    result[method_id] += collector_data[method_id]
+                else:
+                    result[method_id].append(collector_data[method_id])
+        return result
 
     def get_data(self):
         result = {}
         for method_id in range(0, self.__id_counter):
             result[method_id] = []
-        for collector in self.method_collectors:
-            collector.process()
         for collector in self.method_collectors:
             print(collector.ID)
             collector_data = collector.get_data()
@@ -229,6 +238,7 @@ class MethodLengthCollector(MethodCollector):
 
 class MethodCurrentChangeCollector(MethodCollector):
     class MethodStatus(enum.IntEnum):
+        UNKNOWN = -2
         NOT_EXIST = -1
         ADDED = 1
         NO_CHANGE = 0
@@ -245,6 +255,7 @@ class MethodCurrentChangeCollector(MethodCollector):
         # Checking for data initialization commit
         if self.first_commit:
             self.__current_changes.add(method_id)
+            self.__change_status[method_id] = self.MethodStatus.UNKNOWN.__int__()
             return
         if old_method_body is None:
             self.__current_changes.add(method_id)
@@ -290,7 +301,6 @@ class MethodLatestChangesCollector(MethodCollector):
     def get_data(self):
         result = {}
         for data_list in self.__latest_changes:
-            print(data_list)
             for element in data_list:
                 if element not in result:
                     result[element] = []
@@ -374,7 +384,7 @@ class MethodLatestTimeOfLastChangesCollector(MethodCollector):
 class MethodCommitsSinceLastChangeCollector(MethodCollector):
     def __init__(self):
         super().__init__()
-        self.ID = "method_time_since_last_change"
+        self.ID = "method_commits_since_last_change"
         self.__commits_since_last_change = {}
 
     def collect(self, commit, method_id, new_method_body, old_method_body):

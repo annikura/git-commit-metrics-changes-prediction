@@ -408,7 +408,7 @@ class MethodFadingLinesChangeRatioCollector(MethodCollector):
 
     def collect(self, commit, method_id, new_method_body, old_method_body):
         if method_id not in self.__fading_ratios:
-            self.__fading_ratios[method_id] = 1.0
+            self.__fading_ratios[method_id] = 0.0
             return
         self.__new_ratios[method_id] = 0.0
         if old_method_body is not None:

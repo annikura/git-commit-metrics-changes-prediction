@@ -18,7 +18,7 @@ class MethodsCountingListener(JavaParserListener):
     def __init__(self, tokens_stream):
         self.count = 0
         self.tokens = tokens_stream
-        self.blocks = {}
+        self.blocks = set([])
         self.__nested_in = []
         self.__in_method_counter = 0
         self.__current_method = None
@@ -37,10 +37,11 @@ class MethodsCountingListener(JavaParserListener):
 
     def enterMethodDeclaration(self, ctx: JavaParser.MethodDeclarationContext):
         if self.__in_method_counter == 0:
+            method_type = self.tokens.getText(interval=(ctx.typeTypeOrVoid().start.tokenIndex,
+                                                        ctx.typeTypeOrVoid().stop.tokenIndex))
             method_declaration = self.tokens.getText(interval=(ctx.start.tokenIndex, ctx.stop.tokenIndex))
-            method_signature = retrieve_signature(method_declaration)
-            method_id = ".".join(self.__nested_in + [method_signature])
-            self.blocks[method_id] = method_declaration.split("\n")
+            method = Method(method_declaration, ".".join(self.__nested_in), method_type)
+            self.blocks.add(method)
         self.count += 1
 
 
@@ -125,3 +126,12 @@ class JavaFile:
     def eval_blocks(self):
         listener = self._walk_file(MethodsCountingListener(self.tokens_stream))
         return listener.blocks
+
+class Method:
+    def __init__(self, code, location, return_type):
+        self.code = code.split("\n")
+        self.file = None
+        self.signature = retrieve_signature(code)
+        self.location = location
+        self.return_type = return_type
+        self.id = location + "." + self.signature

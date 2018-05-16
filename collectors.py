@@ -122,11 +122,13 @@ class MethodCollector(Collector):
         pass
 
     @staticmethod
-    def code_changed(code1, code2):
-        if code1 is None and code2 is None:
+    def code_changed(method1, method2):
+        if method1 is None and method2 is None:
             return False
-        if code1 is None or code2 is None:
+        if method1 is None or method2 is None:
             return True
+        code1 = method1.code
+        code2 = method2.code
         if len(code1) != len(code2):
             return True
         for old, new in zip(code1, code2):
@@ -159,7 +161,7 @@ class JavaMethodsDataCollector(Collector):
                 method.file = file.path
 
                 # mapping signature into the method id
-                full_method_signature = file.path + "::" + method
+                full_method_signature = file.path + "::" + method.id
                 if full_method_signature in self.__method_ids:
                     method_id = self.__method_ids[full_method_signature]
                 else:
@@ -232,7 +234,7 @@ class MethodCurrentChangeCollector(MethodCollector):
             self.__change_status[method_id] = self.MethodStatus.ADDED.__int__()
             return
         # Then method also existed in the previous commit (not new and not deleted)
-        if self.code_changed(method.code, old_method.code):
+        if self.code_changed(method, old_method):
             self.__current_changes.add(method_id)
             self.__change_status[method_id] = self.MethodStatus.MODIFIED.__int__()
         else:
@@ -314,7 +316,7 @@ class MethodCurrentTimeOfLastChangeCollector(MethodCollector):
     def collect(self, commit, method_id, method, old_method):
         if self.__first_commit_timestamp == -1:
             self.__first_commit_timestamp = commit.committer_time
-        if self.code_changed(method.code, old_method.code):
+        if self.code_changed(method, old_method):
             self.__change_timestamps[method_id] = commit.committer_time - self.__first_commit_timestamp
 
     def get_data(self):
@@ -358,7 +360,7 @@ class MethodCommitsSinceLastChangeCollector(MethodCollector):
         self.__commits_since_last_change = {}
 
     def collect(self, commit, method_id, new_method, old_method):
-        if self.first_commit or self.code_changed(old_method.code, new_method.code):
+        if self.first_commit or self.code_changed(old_method, new_method):
             self.__commits_since_last_change[method_id] = -1
 
     def __flush__(self):
@@ -406,11 +408,11 @@ class MethodChangeRatio(MethodCollector):
         self.__change_info = {}
         self.__commits_in_total = 0
 
-    def collect(self, commit, method_id, new_method_body, old_method_body):
+    def collect(self, commit, method_id, new_method, old_method):
         if method_id not in self.__change_info:
             self.__change_info[method_id] = (1, self.__commits_in_total)
             return
-        if self.code_changed(new_method_body, old_method_body):
+        if self.code_changed(new_method, old_method):
             changed, existed = self.__change_info[method_id]
             self.__change_info[method_id] = (changed + 1, existed)
 

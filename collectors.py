@@ -20,6 +20,12 @@ class Collector:
         """
         pass
 
+    def clear(self):
+        """
+        Clears collector static data.
+        """
+        pass
+
     def get_data(self):
         """Returns collected data as a dictionary {id : collected_data}."""
         pass
@@ -196,44 +202,6 @@ class JavaMethodsDataCollector(Collector):
                 else:
                     result[method_id].append(collector_data[method_id])
         return result
-
-
-class MethodSignatureCollector(MethodCollector):
-    def __init__(self):
-        super().__init__()
-        self.ID = "method_signature"
-        self.next_free = 0
-        self.__name_map = {}
-        self.__result = {}
-
-    def collect(self, commit, method_id, new_method_body, old_method_body):
-        signature = retrieve_signature("\n".join(new_method_body))
-        if signature not in self.__name_map:
-            self.__name_map[signature] = self.next_free
-            self.next_free += 1
-        self.__result[method_id] = self.__name_map[signature]
-
-    def process(self):
-        return self.get_data()
-
-    def get_data(self):
-        return self.__result
-
-
-class MethodLengthCollector(MethodCollector):
-    def __init__(self):
-        super().__init__()
-        self.ID = "method_length"
-        self.__lengths = {}
-
-    def collect(self, commit, method_id, method_body, old_method_body):
-        self.__lengths[method_id] = len(method_body)
-
-    def process(self):
-        return self.get_data()
-
-    def get_data(self):
-        return self.__lengths
 
 
 class MethodCurrentChangeCollector(MethodCollector):
@@ -455,39 +423,67 @@ class MethodChangeRatio(MethodCollector):
         return result
 
 
-class CommitSizeCollector(Collector):
+# Local metrics #
+
+
+class MethodSignatureCollector(MethodCollector):
+    name_map = {}
+    next_free = 0
+
     def __init__(self):
-        self.ID = "commit_size"
-        self.commit_sizes = []
+        super().__init__()
+        self.ID = "method_signature"
+        self.__bodies = {}
 
-    def collect(self, commit):
-        cnt = 0
-        for obj in commit.list_objects():
-            content = obj.get_content()
-            if content is not None:
-                cnt += len(content)
-        self.commit_sizes.append(cnt)
+    def collect(self, commit, method_id, new_method_body, old_method_body):
+        if new_method_body is not None:
+            self.__bodies[method_id] = new_method_body
 
-    def process(self):
-        return self.commit_sizes
-
-
-class AuthorsDataCollector(Collector):
-    def __init__(self, collectors_generator):
-        sample = collectors_generator()
-        self.ID = "authors_data:" + sample.ID
-        self.authors_collectors = {}
-        self._collectors_generator = collectors_generator
-
-    def collect(self, commit):
-        if commit.author not in self.authors_collectors:
-            self.authors_collectors[commit.author] = self._collectors_generator()
-        self.authors_collectors[commit.author].collect(commit)
-
-    def process(self):
-        for author, collector in self.authors_collectors.items():
-            print("Processing", author)
-            collector.process()
+    def clear(self):
+        MethodSignatureCollector.name_map = {}
+        MethodSignatureCollector.next_free = {}
 
     def get_data(self):
-        return self.authors_collectors
+        result = {}
+
+        for method_id, body in self.__bodies.items():
+            signature = retrieve_signature("\n".join(body))
+            if signature not in MethodSignatureCollector.name_map:
+                MethodSignatureCollector.name_map[signature] = MethodSignatureCollector.next_free
+                MethodSignatureCollector.next_free += 1
+            result[method_id] = MethodSignatureCollector.name_map[signature]
+
+        return result
+
+
+class MethodLengthCollector(MethodCollector):
+    def __init__(self):
+        super().__init__()
+        self.ID = "method_length"
+        self.__lengths = {}
+
+    def collect(self, commit, method_id, method_body, old_method_body):
+        self.__lengths[method_id] = len(method_body)
+
+    def get_data(self):
+        return self.__lengths
+
+
+class MethodReturnCountingCollector(MethodCollector):
+    def __init__(self):
+        super().__init__()
+        self.ID = "method_return_counter"
+        self.__bodies = {}
+
+    def collect(self, commit, method_id, new_method_body, old_method_body):
+        self.__bodies[method_id] = new_method_body
+
+    def get_data(self):
+        result = {}
+
+        for method, body in self.__bodies:
+            result[method] = 0
+            if body is not None:
+                for line in body:
+                    result[method] += line.split().count("return")
+        return result

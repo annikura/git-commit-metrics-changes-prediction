@@ -1,6 +1,7 @@
 import difflib
 import enum
 import os
+import re
 
 import matplotlib.pyplot as plt
 
@@ -534,3 +535,40 @@ class MethodReturnTypeCollector(MethodCollector):
     def clear(self):
         MethodReturnTypeCollector.types = {}
         MethodReturnTypeCollector.next_free = 0
+
+
+class MethodMaxLineLengthCollector(MethodCollector):
+    def __init__(self):
+        super().__init__()
+        self.ID = "method_max_line_length"
+        self.__bodies = {}
+
+    def collect(self, commit, method_id, new_method, old_method):
+        self.__bodies[method_id] = new_method.code
+
+    def get_data(self):
+        result = {}
+
+        for method, body in self.__bodies.items():
+            local_max = 0
+            for line in body:
+                local_max = max(len(line), local_max)
+            result[method] = local_max
+        return result
+
+
+class MethodNumbersCountingCollector(MethodCollector):
+    def __init__(self):
+        super().__init__()
+        self.ID = "method_numbers_count"
+        self.__bodies = {}
+
+    def collect(self, commit, method_id, new_method, old_method):
+        self.__bodies[method_id] = new_method.code
+
+    def get_data(self):
+        result = {}
+
+        for method, body in self.__bodies.items():
+            result[method] = len(re.findall(r"\d+", "\n".join(body)))
+        return result

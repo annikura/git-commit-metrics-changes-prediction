@@ -156,7 +156,9 @@ class JavaMethodsDataCollector(Collector):
             methods = file_analyzer.eval_blocks()
 
             for method in methods:
-                method_block = methods[method]
+                method.file = file.path
+
+                # mapping signature into the method id
                 full_method_signature = file.path + "::" + method
                 if full_method_signature in self.__method_ids:
                     method_id = self.__method_ids[full_method_signature]
@@ -165,12 +167,12 @@ class JavaMethodsDataCollector(Collector):
                     self.__method_ids[full_method_signature] = method_id
                     self.__id_counter += 1
 
-                old_code = None
+                old_method = None
                 if method_id in self.__previous_implementations:
-                    old_code = self.__previous_implementations[method_id]
+                    old_method = self.__previous_implementations[method_id]
                 for collector in self.method_collectors:
-                    collector.collect(commit, method_id, method_block, old_code)
-                current_implementations[method_id] = method_block
+                    collector.collect(commit, method_id, method, old_method)
+                current_implementations[method_id] = method
         for collector in self.method_collectors:
             collector.flush()
         self.__previous_implementations = current_implementations
@@ -219,18 +221,18 @@ class MethodCurrentChangeCollector(MethodCollector):
         self.__current_changes = set([])
         self.__change_status = {}
 
-    def collect(self, commit, method_id, method_body, old_method_body):
+    def collect(self, commit, method_id, method, old_method):
         # Checking for data initialization commit
         if self.first_commit:
             self.__current_changes.add(method_id)
             self.__change_status[method_id] = self.MethodStatus.UNKNOWN.__int__()
             return
-        if old_method_body is None:
+        if old_method is None:
             self.__current_changes.add(method_id)
             self.__change_status[method_id] = self.MethodStatus.ADDED.__int__()
             return
         # Then method also existed in the previous commit (not new and not deleted)
-        if self.code_changed(method_body, old_method_body):
+        if self.code_changed(method.code, old_method.code):
             self.__current_changes.add(method_id)
             self.__change_status[method_id] = self.MethodStatus.MODIFIED.__int__()
         else:
@@ -257,8 +259,8 @@ class MethodLatestChangesCollector(MethodCollector):
         self.__stored_changes_max = stored_changes_max
         self.__latest_changes = []
 
-    def collect(self, commit, method_id, method_body, old_method_body):
-        self.method_current_change_collector.collect(commit, method_id, method_body, old_method_body)
+    def collect(self, commit, method_id, method, old_method):
+        self.method_current_change_collector.collect(commit, method_id, method, old_method)
 
     def __flush__(self):
         self.method_current_change_collector.flush()
@@ -285,8 +287,8 @@ class MethodLatestChangesSummary(MethodCollector):
         self.ID = "method_latest_changes_summary"
         self.method_latest_changes_collector = MethodLatestChangesCollector(stored_changes_max)
 
-    def collect(self, commit, method_id, new_method_body, old_method_body):
-        self.method_latest_changes_collector.collect(commit, method_id, new_method_body, old_method_body)
+    def collect(self, commit, method_id, new_method, old_method):
+        self.method_latest_changes_collector.collect(commit, method_id, new_method, old_method)
 
     def __flush__(self):
         self.method_latest_changes_collector.__flush__()
@@ -309,10 +311,10 @@ class MethodCurrentTimeOfLastChangeCollector(MethodCollector):
         self.__change_timestamps = {}
         self.__first_commit_timestamp = -1
 
-    def collect(self, commit, method_id, method_body, old_method_body):
+    def collect(self, commit, method_id, method, old_method):
         if self.__first_commit_timestamp == -1:
             self.__first_commit_timestamp = commit.committer_time
-        if self.code_changed(method_body, old_method_body):
+        if self.code_changed(method.code, old_method.code):
             self.__change_timestamps[method_id] = commit.committer_time - self.__first_commit_timestamp
 
     def get_data(self):
@@ -327,8 +329,8 @@ class MethodLatestTimeOfLastChangesCollector(MethodCollector):
         self.__change_timestamps = []
         self.__stored_changes_max = stored_changes_max
 
-    def collect(self, commit, method_id, method_body, old_method_body):
-        self.__method_current_time_of_last_change.collect(commit, method_id, method_body, old_method_body)
+    def collect(self, commit, method_id, method, old_method):
+        self.__method_current_time_of_last_change.collect(commit, method_id, method, old_method)
 
     def __flush__(self):
         self.__method_current_time_of_last_change.flush()
@@ -355,8 +357,8 @@ class MethodCommitsSinceLastChangeCollector(MethodCollector):
         self.ID = "method_commits_since_last_change"
         self.__commits_since_last_change = {}
 
-    def collect(self, commit, method_id, new_method_body, old_method_body):
-        if self.first_commit or self.code_changed(old_method_body, new_method_body):
+    def collect(self, commit, method_id, new_method, old_method):
+        if self.first_commit or self.code_changed(old_method.code, new_method.code):
             self.__commits_since_last_change[method_id] = -1
 
     def __flush__(self):
@@ -374,16 +376,16 @@ class MethodFadingLinesChangeRatioCollector(MethodCollector):
         self.__fading_ratios = {}
         self.__new_ratios = {}
 
-    def collect(self, commit, method_id, new_method_body, old_method_body):
+    def collect(self, commit, method_id, new_method, old_method):
         if method_id not in self.__fading_ratios:
             self.__fading_ratios[method_id] = 0.0
             return
         self.__new_ratios[method_id] = 0.0
-        if old_method_body is not None:
+        if old_method is not None:
             self.__new_ratios[method_id] = difflib.SequenceMatcher(
                 isjunk=lambda x: x in " \t",
-                a="\n".join(new_method_body),
-                b="\n".join(old_method_body)).ratio()
+                a="\n".join(new_method.code),
+                b="\n".join(old_method.code)).ratio()
 
     def __flush__(self):
         for method, old_ratio in self.__fading_ratios.items():
@@ -435,9 +437,9 @@ class MethodSignatureCollector(MethodCollector):
         self.ID = "method_signature"
         self.__bodies = {}
 
-    def collect(self, commit, method_id, new_method_body, old_method_body):
-        if new_method_body is not None:
-            self.__bodies[method_id] = new_method_body
+    def collect(self, commit, method_id, new_method, old_method):
+        if new_method is not None:
+            self.__bodies[method_id] = new_method.code
 
     def clear(self):
         MethodSignatureCollector.name_map = {}
@@ -462,8 +464,8 @@ class MethodLengthCollector(MethodCollector):
         self.ID = "method_length"
         self.__lengths = {}
 
-    def collect(self, commit, method_id, method_body, old_method_body):
-        self.__lengths[method_id] = len(method_body)
+    def collect(self, commit, method_id, method, old_method):
+        self.__lengths[method_id] = len(method.code)
 
     def get_data(self):
         return self.__lengths
@@ -475,8 +477,8 @@ class MethodReturnCountingCollector(MethodCollector):
         self.ID = "method_return_counter"
         self.__bodies = {}
 
-    def collect(self, commit, method_id, new_method_body, old_method_body):
-        self.__bodies[method_id] = new_method_body
+    def collect(self, commit, method_id, new_method, old_method):
+        self.__bodies[method_id] = new_method.code
 
     def get_data(self):
         result = {}
@@ -487,3 +489,4 @@ class MethodReturnCountingCollector(MethodCollector):
                 for line in body:
                     result[method] += line.split().count("return")
         return result
+

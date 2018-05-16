@@ -38,7 +38,7 @@ class MethodCollector(Collector):
         self.first_commit = True
         self.ID = ""
 
-    def collect(self, commit, method_id, new_method_body, old_method_body):
+    def collect(self, commit, method_id, new_method, old_method):
         """
         Retrieves required data about method from the given data structures to store or process it.
         Expected to return nothing.
@@ -49,12 +49,12 @@ class MethodCollector(Collector):
         :param method_id: method id number. This id will later be used as a key in the dictionary
             returned by get_data method.
         :type method_id: int
-        :param new_method_body: line by line method code represented in the current commit.
+        :param new_method: method represented in the current commit.
             None if method was deleted in current commit.
-        :type new_method_body: list[string]
-        :param old_method_body: line by line method code represented in the previous commit.
+        :type new_method: java_metrics.Method
+        :param old_method: method represented in the previous commit.
             None if method was just created.
-        :type old_method_body: list[string]
+        :type old_method: java_metrics.Method
 
         :return nothing
         :rtype None
@@ -492,3 +492,45 @@ class MethodReturnCountingCollector(MethodCollector):
                     result[method] += line.split().count("return")
         return result
 
+
+class MethodClassDepthCollector(MethodCollector):
+    def __init__(self):
+        super().__init__()
+        self.ID = "method_class_depth"
+        self.__locations = {}
+
+    def collect(self, commit, method_id, new_method, old_method):
+        self.__locations[method_id] = new_method.location
+
+    def get_data(self):
+        result = {}
+
+        for method, location in self.__locations.items():
+            result[method] = location.count('.')
+        return result
+
+
+class MethodReturnTypeCollector(MethodCollector):
+    types = {}
+    next_free = 0
+
+    def __init__(self):
+        super().__init__()
+        self.ID = "method_return_type_collector"
+        self.__return_types = {}
+
+    def collect(self, commit, method_id, new_method, old_method):
+        self.__return_types[method_id] = new_method.return_type
+
+    def get_data(self):
+        result = {}
+        for method, type in self.__return_types.items():
+            if type not in MethodReturnTypeCollector.types:
+                MethodReturnTypeCollector.types[type] = MethodReturnTypeCollector.next_free
+                MethodReturnTypeCollector.next_free += 1
+            result[method] = MethodReturnTypeCollector.types[type]
+        return result
+
+    def clear(self):
+        MethodReturnTypeCollector.types = {}
+        MethodReturnTypeCollector.next_free = 0

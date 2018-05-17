@@ -570,5 +570,48 @@ class MethodNumbersCountingCollector(MethodCollector):
         result = {}
 
         for method, body in self.__bodies.items():
-            result[method] = len(re.findall(r"\d+", "\n".join(body)))
+            result[method] = len(re.findall(r"\d+", "\n".join(body))) / len(body)
         return result
+
+
+class MethodAssignmentCountingCollector(MethodCollector):
+    def __init__(self):
+        super().__init__()
+        self.ID = "method_assignment_count"
+        self.__bodies = {}
+
+    def collect(self, commit, method_id, new_method, old_method):
+        self.__bodies[method_id] = new_method.code
+
+    def get_data(self):
+        result = {}
+
+        for method, body in self.__bodies.items():
+            result[method] = "\n".join(body).replace("==", "").count("=") / len(body)
+        return result
+
+
+class MethodDirectoryCollector(MethodCollector):
+    dirs = {}
+    next_free = 0
+
+    def __init__(self):
+        super().__init__()
+        self.ID = "method_directory_name_collector"
+        self.__directories = {}
+
+    def collect(self, commit, method_id, new_method, old_method):
+        self.__directories[method_id] = new_method.file[:new_method.file.rfind(os.path.sep)]
+
+    def get_data(self):
+        result = {}
+        for method, dir_name in self.__directories.items():
+            if dir_name not in MethodDirectoryCollector.dirs:
+                MethodDirectoryCollector.dirs[dir_name] = MethodDirectoryCollector.next_free
+                MethodDirectoryCollector.next_free += 1
+            result[method] = MethodDirectoryCollector.dirs[dir_name]
+        return result
+
+    def clear(self):
+        MethodDirectoryCollector.dirs = {}
+        MethodDirectoryCollector.next_free = 0

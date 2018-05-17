@@ -372,6 +372,76 @@ class MethodCommitsSinceLastChangeCollector(MethodCollector):
         return self.__commits_since_last_change
 
 
+class MethodCommitChangeExpectationCollector(MethodCollector):
+    def __init__(self):
+        super().__init__()
+        self.ID = "method_commits_change_expectation"
+        self.__commits_since_change_collector = MethodCommitsSinceLastChangeCollector()
+        self.__method_change_ratio = MethodChangeRatio()
+
+    def collect(self, commit, method_id, new_method, old_method):
+        self.__commits_since_change_collector.collect(commit, method_id, new_method, old_method)
+        self.__method_change_ratio.collect(commit, method_id, new_method, old_method)
+
+    def __flush__(self):
+        self.__commits_since_change_collector.flush()
+        self.__method_change_ratio.flush()
+
+    def get_data(self):
+        result = {}
+
+        ratios = self.__method_change_ratio.get_data()
+        for method, commits_cnt in self.__commits_since_change_collector.get_data():
+            result[method] = commits_cnt * ratios[method]
+        return result
+
+
+class MethodExistenceRatio(MethodCollector):
+    def __init__(self):
+        super().__init__()
+        self.ID = "method_existence_ratio"
+        self.__counter = {}
+        self.__total_commits = 0
+
+    def collect(self, commit, method_id, new_method, old_method):
+        if method_id not in self.__counter:
+            self.__counter[method_id] = 0
+        self.__counter[method_id] += 1
+
+    def __flush__(self):
+        self.__total_commits += 1
+
+    def get_data(self):
+        result = {}
+
+        for method, commits_existed in self.__counter.items():
+            result[method] = commits_existed / self.__total_commits
+        return result
+
+
+class MethodExistenceSinceLastAddRatio(MethodCollector):
+    def __init__(self):
+        super().__init__()
+        self.ID = "method_existence_since_last_add"
+        self.__counter = {}
+        self.__total_commits = 0
+
+    def collect(self, commit, method_id, new_method, old_method):
+        if old_method is None:
+            self.__counter[method_id] = 0
+        self.__counter[method_id] += 1
+
+    def __flush__(self):
+        self.__total_commits += 1
+
+    def get_data(self):
+        result = {}
+
+        for method, commits_existed in self.__counter.items():
+            result[method] = commits_existed / self.__total_commits
+        return result
+
+
 class MethodFadingLinesChangeRatioCollector(MethodCollector):
     def __init__(self):
         super().__init__()
@@ -400,6 +470,49 @@ class MethodFadingLinesChangeRatioCollector(MethodCollector):
 
     def get_data(self):
         return self.__fading_ratios
+
+
+class MethodCommittersCountingCollector(MethodCollector):
+    def __init__(self):
+        super().__init__()
+        self.ID = "method_commiters_counter"
+        self.__committers = {}
+
+    def collect(self, commit, method_id, new_method, old_method):
+        if method_id not in self.__committers:
+            self.__committers[method_id] = set([])
+        if self.code_changed(new_method, old_method):
+            self.__committers[method_id].add(commit.committer)
+
+    def get_data(self):
+        result = {}
+
+        for method, committers in self.__committers.items():
+            result[method] = len(committers)
+        return result
+
+
+class MethodLastCommitterCollector(MethodCollector):
+    committers = {}
+    next_free = 0
+
+    def __init__(self):
+        super().__init__()
+        self.ID = "method_commiters_counter"
+        self.__committers = {}
+
+    def collect(self, commit, method_id, new_method, old_method):
+        if method_id not in self.__committers.items():
+            self.__committers[method_id] = set([])
+        if self.code_changed(new_method, old_method):
+            self.__committers[method_id].add(commit.committer)
+
+    def get_data(self):
+        result = {}
+
+        for method, committers in self.__committers:
+            result[method] = len(committers)
+        return result
 
 
 class MethodChangeRatio(MethodCollector):

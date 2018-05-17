@@ -127,6 +127,7 @@ class JavaFile:
         listener = self._walk_file(MethodsCountingListener(self.tokens_stream))
         return listener.blocks
 
+
 class Method:
     def __init__(self, code, location, return_type):
         self.code = code.split("\n")

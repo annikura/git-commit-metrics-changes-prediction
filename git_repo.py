@@ -33,6 +33,7 @@ class Repo:
                 return
             commit = entry.commit
             if from_commit <= i:
+                print("Iterating...", i)
                 for collector in collectors:
                     collector.collect(Commit(commit, prev_commit, self.repo))
             prev_commit = commit

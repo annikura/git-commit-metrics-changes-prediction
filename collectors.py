@@ -102,7 +102,8 @@ class MethodCollector(Collector):
             plt.axis([min_x, max_x, min_y, max_y])
             plt.title(self.ID)
             plt.grid(True)
-            plt.show()
+            plt.gcf().canvas.set_window_title(self.ID)
+            plt.savefig(self.ID + ".pdf")
 
         return result
 
@@ -419,29 +420,6 @@ class MethodExistenceRatio(MethodCollector):
         return result
 
 
-class MethodExistenceSinceLastAddRatio(MethodCollector):
-    def __init__(self):
-        super().__init__()
-        self.ID = "method_existence_since_last_add"
-        self.__counter = {}
-        self.__total_commits = 0
-
-    def collect(self, commit, method_id, new_method, old_method):
-        if old_method is None:
-            self.__counter[method_id] = 0
-        self.__counter[method_id] += 1
-
-    def __flush__(self):
-        self.__total_commits += 1
-
-    def get_data(self):
-        result = {}
-
-        for method, commits_existed in self.__counter.items():
-            result[method] = commits_existed / self.__total_commits
-        return result
-
-
 class MethodFadingLinesChangeRatioCollector(MethodCollector):
     def __init__(self):
         super().__init__()
@@ -498,20 +476,21 @@ class MethodLastCommitterCollector(MethodCollector):
 
     def __init__(self):
         super().__init__()
-        self.ID = "method_commiters_counter"
-        self.__committers = {}
+        self.ID = "method_last_committer"
+        self.__last_committer = {}
 
     def collect(self, commit, method_id, new_method, old_method):
-        if method_id not in self.__committers.items():
-            self.__committers[method_id] = set([])
         if self.code_changed(new_method, old_method):
-            self.__committers[method_id].add(commit.committer)
+            self.__last_committer[method_id] = commit.committer
 
     def get_data(self):
         result = {}
 
-        for method, committers in self.__committers:
-            result[method] = len(committers)
+        for method, committer in self.__last_committer.items():
+            if committer not in MethodLastCommitterCollector.committers:
+                MethodLastCommitterCollector.committers[committer] = MethodLastCommitterCollector.next_free
+                MethodLastCommitterCollector.next_free += 1
+            result[method] = MethodLastCommitterCollector.committers[committer]
         return result
 
 

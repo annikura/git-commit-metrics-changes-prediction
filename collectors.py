@@ -34,6 +34,7 @@ class Collector:
 
 class MethodCollector(Collector):
     """Interface for collecting data about methods."""
+    image_num = 0
 
     def __init__(self):
         self.first_commit = True
@@ -102,9 +103,9 @@ class MethodCollector(Collector):
             plt.axis([min_x, max_x, min_y, max_y])
             plt.title(self.ID)
             plt.grid(True)
-            plt.gcf().canvas.set_window_title(self.ID)
-            plt.savefig(self.ID + ".pdf")
-
+            plt.savefig(MethodCollector.image_num.__str__() + ".png")
+            plt.clf()
+            MethodCollector.image_num += 1
         return result
 
     def get_data(self):
@@ -117,8 +118,8 @@ class MethodCollector(Collector):
         pass
 
     def flush(self):
-        self.first_commit = False
         self.__flush__()
+        self.first_commit = False
 
     def __flush__(self):
         pass
@@ -164,6 +165,7 @@ class JavaMethodsDataCollector(Collector):
 
                 # mapping signature into the method id
                 full_method_signature = file.path + "::" + method.id
+
                 if full_method_signature in self.__method_ids:
                     method_id = self.__method_ids[full_method_signature]
                 else:
@@ -313,16 +315,22 @@ class MethodCurrentTimeOfLastChangeCollector(MethodCollector):
         super().__init__()
         self.ID = "method_change_time"
         self.__change_timestamps = {}
+        self.__last_commit_timestamp = -1
         self.__first_commit_timestamp = -1
 
     def collect(self, commit, method_id, method, old_method):
         if self.__first_commit_timestamp == -1:
             self.__first_commit_timestamp = commit.committer_time
+        self.__last_commit_timestamp = commit.committer_time
         if self.code_changed(method, old_method):
-            self.__change_timestamps[method_id] = commit.committer_time - self.__first_commit_timestamp
+            self.__change_timestamps[method_id] = commit.committer_time
 
     def get_data(self):
-        return self.__change_timestamps
+        result = {}
+        for method, timestamp in self.__change_timestamps.items():
+            result[method] = (self.__last_commit_timestamp - timestamp) / \
+                             (self.__last_commit_timestamp - self.__first_commit_timestamp)
+        return result
 
 
 class MethodLatestTimeOfLastChangesCollector(MethodCollector):
@@ -417,6 +425,8 @@ class MethodExistenceRatio(MethodCollector):
 
         for method, commits_existed in self.__counter.items():
             result[method] = commits_existed / self.__total_commits
+            if result[method] > 1:
+                print(method, commits_existed, self.__total_commits)
         return result
 
 
@@ -519,6 +529,30 @@ class MethodChangeRatio(MethodCollector):
             result[key] = commits_changed / (self.__commits_in_total - commits_not_existed)
         return result
 
+
+class MethodLatestChangeRatio(MethodCollector):
+    def __init__(self, stored_changes_max):
+        super().__init__()
+        self.__stored_changes_max = stored_changes_max
+        self.ID = "method_change_ratio"
+        self.__change_info = {}
+        self.__commits_in_total = 0
+
+    def collect(self, commit, method_id, new_method, old_method):
+        if method_id not in self.__change_info:
+            self.__change_info[method_id] = []
+        if self.code_changed(new_method, old_method):
+            self.__change_info[method_id].append(1)
+        else:
+            self.__change_info[method_id].append(0)
+        if len(self.__change_info[method_id]) > self.__stored_changes_max:
+            self.__change_info[method_id].pop(0)
+
+    def get_data(self):
+        result = {}
+
+        for method, changes in self.__change_info.items():
+            result[method] = changes.count(1) / self.__stored_changes_max
 
 # Local metrics #
 

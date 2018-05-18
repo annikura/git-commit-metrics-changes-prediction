@@ -126,6 +126,7 @@ class MethodCollector(Collector):
 
     @staticmethod
     def code_changed(method1, method2):
+
         if method1 is None and method2 is None:
             return False
         if method1 is None or method2 is None:
@@ -400,7 +401,7 @@ class MethodCommitChangeExpectationCollector(MethodCollector):
         result = {}
 
         ratios = self.__method_change_ratio.get_data()
-        for method, commits_cnt in self.__commits_since_change_collector.get_data():
+        for method, commits_cnt in self.__commits_since_change_collector.get_data().items():
             result[method] = commits_cnt * ratios[method]
         return result
 

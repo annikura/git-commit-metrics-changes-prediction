@@ -535,7 +535,7 @@ class MethodLatestChangeRatio(MethodCollector):
     def __init__(self, stored_changes_max):
         super().__init__()
         self.__stored_changes_max = stored_changes_max
-        self.ID = "method_change_ratio"
+        self.ID = "method_latest_change_ratio"
         self.__change_info = {}
         self.__commits_in_total = 0
 
@@ -554,6 +554,8 @@ class MethodLatestChangeRatio(MethodCollector):
 
         for method, changes in self.__change_info.items():
             result[method] = changes.count(1) / self.__stored_changes_max
+        return result
+
 
 # Local metrics #
 
@@ -613,7 +615,7 @@ class MethodReturnCountingCollector(MethodCollector):
     def get_data(self):
         result = {}
 
-        for method, body in self.__bodies:
+        for method, body in self.__bodies.items():
             result[method] = 0
             if body is not None:
                 for line in body:
